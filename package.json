@@ -1,7 +1,7 @@
 {
   "name": "full-access-gpt",
   "displayName": "Full Access GPT",
-  "description": "Gives full workspace access for gpt to create and modify codes",
+  "description": "Gives full workspace access for GPT to create and modify codes",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.94.0"
@@ -24,7 +24,24 @@
         "command": "full-access-gpt.modify",
         "title": "GPT-4: Modify Code"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Full Access GPT",
+      "properties": {
+        "full-access-gpt.apiServerUrl": {
+          "type": "string",
+          "default": "http://localhost:3001/api/generate",
+          "description": "URL of the custom GPT API server."
+        },
+        "full-access-gpt.allowedFileTypes": {
+          "type": "array",
+          "default": [ ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".rb", ".go", ".php"
+          ],
+          "description": "List of file extensions that the extension will process."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
