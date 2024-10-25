@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-PLACEHOLDER_NONCE'; style-src 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Full Access GPT UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 100px; padding: 10px; margin-bottom: 10px; }
+    button { padding: 10px 20px; }
+    #response { margin-top: 20px; white-space: pre-wrap; }
+    #status { margin-top: 10px; color: blue; }
+  </style>
+</head>
+<body>
+  <h1>Full Access GPT</h1>
+  <textarea id="instruction" placeholder="Enter your instruction here..."></textarea>
+  <br/>
+  <button onclick="submitInstruction()">Submit</button>
+  <div id="status"></div>
+  <div id="response"></div>
+
+  <script nonce="PLACEHOLDER_NONCE">
+    const vscode = acquireVsCodeApi();
+
+    function submitInstruction() {
+      const instruction = document.getElementById('instruction').value;
+      if (instruction.trim() === '') {
+        alert('Please enter an instruction.');
+        return;
+      }
+      vscode.postMessage({ type: 'submit', instruction: instruction });
+      document.getElementById('status').innerText = 'Processing...';
+      document.getElementById('response').innerText = '';
+    }
+
+    window.addEventListener('message', event => {
+      const message = event.data;
+      switch (message.type) {
+        case 'response':
+          document.getElementById('response').innerText = message.reply;
+          document.getElementById('status').innerText = '';
+          break;
+        case 'status':
+          document.getElementById('status').innerText = message.status;
+          break;
+      }
+    });
+  </script>
+</body>
+</html>

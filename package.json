@@ -11,7 +11,8 @@
   ],
   "activationEvents": [
     "onCommand:full-access-gpt.generate",
-    "onCommand:full-access-gpt.modify"
+    "onCommand:full-access-gpt.modify",
+    "onCommand:full-access-gpt.openUI"  // Added activation event for Webview
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -23,6 +24,10 @@
       {
         "command": "full-access-gpt.modify",
         "title": "GPT-4: Modify Code"
+      },
+      {
+        "command": "full-access-gpt.openUI",
+        "title": "GPT-4: Open UI"  // Added command for Webview
       }
     ],
     "configuration": {
@@ -36,7 +41,17 @@
         },
         "full-access-gpt.allowedFileTypes": {
           "type": "array",
-          "default": [ ".js", ".ts", ".py", ".java", ".c", ".cpp", ".cs", ".rb", ".go", ".php"
+          "default": [
+            ".js",
+            ".ts",
+            ".py",
+            ".java",
+            ".c",
+            ".cpp",
+            ".cs",
+            ".rb",
+            ".go",
+            ".php"
           ],
           "description": "List of file extensions that the extension will process."
         }

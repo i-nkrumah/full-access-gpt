@@ -1,7 +1,7 @@
-// src/extension.ts
 import * as vscode from 'vscode';
 import axios from 'axios';
 import * as path from 'path';
+import * as fs from 'fs';
 
 // Define the interface for the API response
 interface GPTResponse {
@@ -21,9 +21,140 @@ export function activate(context: vscode.ExtensionContext) {
     await handleGPTRequest('Modify Code');
   });
 
-  context.subscriptions.push(generateDisposable, modifyDisposable);
+  // Command to Open Webview UI
+  let openUIPanel = vscode.commands.registerCommand('full-access-gpt.openUI', () => {
+    FullAccessGPTPanel.createOrShow(context.extensionUri);
+  });
+
+  context.subscriptions.push(generateDisposable, modifyDisposable, openUIPanel);
 }
 
+class FullAccessGPTPanel {
+  public static currentPanel: FullAccessGPTPanel | undefined;
+
+  private readonly _panel: vscode.WebviewPanel;
+  private readonly _extensionUri: vscode.Uri;
+  private _disposables: vscode.Disposable[] = [];
+
+  public static createOrShow(extensionUri: vscode.Uri) {
+    const column = vscode.window.activeTextEditor
+      ? vscode.window.activeTextEditor.viewColumn
+      : undefined;
+
+    // If we already have a panel, show it.
+    if (FullAccessGPTPanel.currentPanel) {
+      FullAccessGPTPanel.currentPanel._panel.reveal(column);
+      return;
+    }
+
+    // Otherwise, create a new panel.
+    const panel = vscode.window.createWebviewPanel(
+      'fullAccessGPTUI',
+      'Full Access GPT',
+      column || vscode.ViewColumn.One,
+      {
+        // Enable javascript in the webview
+        enableScripts: true,
+
+        // Restrict the webview to only load resources from within the extension's `media` directory.
+        localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'media')]
+      }
+    );
+
+    FullAccessGPTPanel.currentPanel = new FullAccessGPTPanel(panel, extensionUri);
+  }
+
+  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+    this._panel = panel;
+    this._extensionUri = extensionUri;
+
+    // Set the webview's initial html content
+    this._update();
+
+    // Listen for when the panel is disposed
+    this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
+
+    // Handle messages from the webview
+    this._panel.webview.onDidReceiveMessage(
+      message => {
+        switch (message.type) {
+          case 'submit':
+            this.handleSubmit(message.instruction);
+            return;
+        }
+      },
+      null,
+      this._disposables
+    );
+  }
+
+  public dispose() {
+    FullAccessGPTPanel.currentPanel = undefined;
+
+    // Clean up our resources
+    this._panel.dispose();
+
+    while (this._disposables.length) {
+      const x = this._disposables.pop();
+      if (x) {
+        x.dispose();
+      }
+    }
+  }
+
+  private async handleSubmit(instruction: string) {
+    // Show a loading indicator in the webview
+    this._panel.webview.postMessage({ type: 'status', status: 'Processing...' });
+
+    try {
+      // Access API Server URL from configuration
+      const config = vscode.workspace.getConfiguration('full-access-gpt');
+      const apiServerUrl = config.get<string>('apiServerUrl') || 'http://localhost:3001/api/generate';
+
+      // Make the API request with the defined response type
+      const response = await axios.post<GPTResponse>(apiServerUrl, { prompt: instruction });
+
+      if (response.data && response.data.reply) {
+        const reply = response.data.reply;
+        // Send the reply back to the webview
+        this._panel.webview.postMessage({ type: 'response', reply: reply });
+      } else {
+        this._panel.webview.postMessage({ type: 'response', reply: 'No response from GPT-4.' });
+      }
+    } catch (error) {
+      console.error('Error:', error);
+      this._panel.webview.postMessage({ type: 'response', reply: 'Failed to generate response from GPT-4.' });
+    }
+  }
+
+  private _update() {
+    this._panel.webview.html = this._getHtmlForWebview();
+  }
+
+  private _getHtmlForWebview() {
+    const nonce = getNonce();
+    const webviewPath = vscode.Uri.joinPath(this._extensionUri, 'media', 'webview.html');
+
+    let htmlContent = fs.readFileSync(webviewPath.fsPath, 'utf8');
+
+    // Replace the nonce placeholder with the actual nonce
+    htmlContent = htmlContent.replace(/PLACEHOLDER_NONCE/g, nonce);
+
+    return htmlContent;
+  }
+}
+
+// Helper function to generate a nonce
+function getNonce() {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < 32; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
+// Existing handleGPTRequest function
 async function handleGPTRequest(action: string) {
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -49,7 +180,6 @@ async function handleGPTRequest(action: string) {
   }
 
   let prompt = '';
-  let selectedText = '';
 
   if (choice === 'Current File') {
     const filePath = document.fileName;
@@ -59,9 +189,22 @@ async function handleGPTRequest(action: string) {
     // Read all files in the workspace
     const files = await getAllFiles(workspaceFolders[0].uri.fsPath);
     let combinedContent = '';
+    const config = vscode.workspace.getConfiguration('full-access-gpt');
+    const allowedExtensions: string[] = config.get<string[]>('allowedFileTypes') || [
+      ".js",
+      ".ts",
+      ".py",
+      ".java",
+      ".c",
+      ".cpp",
+      ".cs",
+      ".rb",
+      ".go",
+      ".php"
+    ];
+
     for (const file of files) {
       const ext = path.extname(file);
-      const allowedExtensions = ['.js', '.ts', '.py', '.java', '.c', '.cpp', '.cs', '.rb', '.go', '.php'];
       if (allowedExtensions.includes(ext)) {
         try {
           const content = await vscode.workspace.fs.readFile(vscode.Uri.file(file));
@@ -87,8 +230,12 @@ async function handleGPTRequest(action: string) {
   const loading = vscode.window.setStatusBarMessage('$(sync~spin) Processing GPT-4 request...', 10000);
 
   try {
+    // Access API Server URL from configuration
+    const config = vscode.workspace.getConfiguration('full-access-gpt');
+    const apiServerUrl = config.get<string>('apiServerUrl') || 'http://localhost:3001/api/generate';
+
     // Make the API request with the defined response type
-    const response = await axios.post<GPTResponse>('http://localhost:3001/api/generate', { prompt });
+    const response = await axios.post<GPTResponse>(apiServerUrl, { prompt });
 
     if (response.data && response.data.reply) {
       const reply = response.data.reply;
